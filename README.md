@@ -35,3 +35,12 @@ pip install -e .
 ```
 
 Both options install `rsm_utils` in editable mode along with all dependencies.
+
+## Usage
+
+To use the plotRSM GUI, activate your environment and run:
+
+```bash
+conda activate rsm_utils   # or: source .venv/bin/activate
+python plot_rsm.py
+```
