@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rsm_utils"
+version = "0.1.0"
+description = "Tools for creating 3D Reciprocal Space Mapping from scan images"
+authors = [{name="Hao Zheng"}]
+dependencies = [
+	"numpy",
+	"matplotlib",
+	"xrayutilities",
+	"pyvista",
+	"tifffile",
+	"tqdm",
+	"pyqtgraph",
+	"pyvistaqt",
+	"PyQt5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
