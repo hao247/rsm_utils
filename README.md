@@ -44,3 +44,10 @@ To use the plotRSM GUI, activate your environment and run:
 conda activate rsm_utils   # or: source .venv/bin/activate
 python plot_rsm.py
 ```
+
+To map a single detector image:
+
+```python
+from rsm_utils import map_hkl
+map_hkl(tiff_fname)
+```
