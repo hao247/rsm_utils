@@ -29,9 +29,12 @@ class VTIViewer(QMainWindow):
         self.current_dir = '/home/beams22/29IDUSER/Documents/User_Macros'
         self.cmap_lst = ["jet", "viridis", "plasma", "inferno", "magma"]
         self.cmap_str = self.cmap_lst[0]
-        
-        # Track 3D slice actors to allow deletion
-        self.slice_actors = {}
+        # self.rsm_path = os.path.dirname(__file__)
+        # self.cmap_lst = []
+        # cmap_flist = glob.glob(os.path.join(self.rsm_path, 'cmaps', '*.npy'))
+        # for cmap_fpath in cmap_flist:
+        #     cmap_name = cmap_fpath.split('/')[-1]
+        #     self.cmap_lst.append(cmap_name.split('.')[0])
 
         # ---- UI Layout ----
         central = QWidget()
@@ -41,8 +44,8 @@ class VTIViewer(QMainWindow):
 
         left_layout = QVBoxLayout()
         right_layout = QVBoxLayout()
-        main_layout.addLayout(left_layout, 1)
-        main_layout.addLayout(right_layout, 1)
+        main_layout.addLayout(left_layout)
+        main_layout.addLayout(right_layout)
 
         # ---- 3D View ----
         self.plotter = QtInteractor(self)
@@ -106,7 +109,8 @@ class VTIViewer(QMainWindow):
         self.vmin_input.returnPressed.connect(self.update_vmin_vmax)
         self.vmax_input.returnPressed.connect(self.update_vmin_vmax)
         self.add_to_3d_button.clicked.connect(self.add_to_3d)
-        self.remove_from_3d_button.clicked.connect(lambda: self.remove_from_3d())
+        self.remove_from_3d_button.clicked.connect(self.remove_from_3d)
+
 
     def add_to_3d(self):
         """Extracts an orthogonal slice mesh from the 3D grid and renders it in PyVista."""
@@ -180,8 +184,10 @@ class VTIViewer(QMainWindow):
             return
 
         self.current_dir = os.path.dirname(file_name)
+
         self.grid = pv.read(file_name)
 
+        # detect scalar
         if self.grid.point_data:
             self.scalar_name = list(self.grid.point_data.keys())[0]
         elif self.grid.cell_data:
@@ -189,8 +195,10 @@ class VTIViewer(QMainWindow):
         else:
             raise ValueError("No scalar data found")
 
+        # default contour (log midpoint)
         data = self.grid[self.scalar_name]
-        level_30 = np.percentile(data[data>0], 30)
+
+        level_30 = np.percentile(data[data>0], 50)
         level_99 = np.percentile(data[data>0], 99)
 
         data = np.clip(data, 1e-12, None)
@@ -200,15 +208,28 @@ class VTIViewer(QMainWindow):
         self.L_array = self.grid.z
         self.data_array = data.reshape(nx, ny, nz, order='F')
 
+
+
         self.default_levels = np.unique(np.round(np.linspace(level_30, level_99, 7), 1))
         self.level_input.setText(','.join([str(i) for i in self.default_levels]))
 
+        # setup plot
         self.plotter.clear()
-        self.slice_actors.clear() # Clear state tracker for new file
         self.plotter.reset_camera(bounds=self.grid.bounds)
         
-        self.plotter.add_axes(xlabel="H", ylabel="K", zlabel="L", labels_off=False)
-        self.plotter.show_bounds(bounds=self.grid.bounds, location="outer", all_edges=True)
+        self.plotter.add_axes(
+            xlabel="H",
+            ylabel="K",
+            zlabel="L",
+            labels_off=False,
+        )
+
+        self.plotter.show_bounds(
+            bounds=self.grid.bounds,
+            location="outer",
+            all_edges=True,
+        )
+
         self.plotter.set_scale(1, 1, 1)
 
         self.update_contour()
@@ -224,16 +245,15 @@ class VTIViewer(QMainWindow):
         if self.grid is None:
             return
 
+        # data = self.grid[self.scalar_name]
+        # data = np.clip(data, 1e-12, None)
+
+        # read input
         try:
             levels = [float(x) for x in self.level_input.text().split(",")]
             opacity_levels = [0.05,]*len(levels)
             self.cmap_str = self.cmap_box.currentText()
             self.plotter.clear()
-            
-            # Re-insert slice actors tracking active states across clears
-            active_slices = list(self.slice_actors.keys())
-            self.slice_actors.clear()
-            
             for level, opacity in zip(levels, opacity_levels):
                 contour = self.grid.contour([level], scalars=self.scalar_name)
                 self.plotter.add_mesh(
@@ -241,6 +261,7 @@ class VTIViewer(QMainWindow):
                     scalars=self.scalar_name,
                     cmap=self.cmap_str,
                     opacity=opacity,
+                    # log_scale=True,
                     reset_camera=False
                 )
         except Exception:
@@ -248,10 +269,6 @@ class VTIViewer(QMainWindow):
             levels = [float(x) for x in self.level_input.text().split(",")]
             opacity_levels = [0.05,]*len(levels)
             self.plotter.clear()
-            
-            active_slices = list(self.slice_actors.keys())
-            self.slice_actors.clear()
-
             for level, opacity in zip(self.default_levels, opacity_levels):
                 contour = self.grid.contour([level], scalars=self.scalar_name)
                 self.plotter.add_mesh(
@@ -259,9 +276,10 @@ class VTIViewer(QMainWindow):
                     scalars=self.scalar_name,
                     cmap=self.cmap_str,
                     opacity=opacity,
+                    # log_scale=True,
                     reset_camera=False
                 )
-        
+        # self.plotter.show_grid()
         cubeaxesactor = self.plotter.show_grid(font_size=10)
         cubeaxesactor.x_label_format='{:.3f}'
         cubeaxesactor.y_label_format='{:.3f}'
@@ -270,25 +288,33 @@ class VTIViewer(QMainWindow):
         cubeaxesactor.y_title='K'
         cubeaxesactor.z_title='L'
 
+        # self.plotter.reset_camera(bounds=self.grid.bounds)
+        
         self.label.setText(f"Contours: {levels}")
         self.plotter.render()
 
     def update_slice(self):
+        """Plot 2D slice based on input like 'L=25'"""
         slice_str = self.slice_input.text().strip()
         axis_map = {'H': 0, 'K': 1, 'L': 2}
 
         try:
             axis_char, val = slice_str.split('=')
-            axis_char, val = axis_char.strip().upper(), float(val.strip())
+            axis_char, val = axis_char.strip(), val.strip()
+            axis_char = axis_char.upper()
+            val = float(val)
 
             if axis_char not in axis_map:
                 raise ValueError("Axis must be H, K, or L")
 
             axis = axis_map[axis_char]
+
+            # Map value to nearest voxel index
             min_val = self.grid.bounds[axis*2]
             max_val = self.grid.bounds[axis*2+1]
             idx = int(round((val - min_val)/(max_val - min_val) * (self.data_array.shape[axis]-1)))
 
+            # Extract slice
             if axis == 0:
                 slc = np.s_[idx, :, :]
                 x_grid = self.K_array[slc]
@@ -311,6 +337,12 @@ class VTIViewer(QMainWindow):
                 xlabel = 'H'
                 ylabel = 'K'
 
+            
+            # cmap = pg.colormap.get(self.cmap_str)
+            # lut = cmap.getLookupTable(0.0, 1.0, 256)
+            # if lut.shape[1] == 3:
+            #     alpha = np.ones((lut.shape[0], 1), dtype=lut.dtype)*255
+            #     lut = np.hstack((lut, alpha))
             cmap = plt.get_cmap(self.cmap_str)
             lut = cmap(np.linspace(0, 1, 256))
             lut = (lut * 255).astype(np.uint8)
@@ -339,6 +371,9 @@ class VTIViewer(QMainWindow):
                 else:
                     self.pcm.setLevels([self.slice_vmin, self.slice_vmax])
 
+# -------------------------
+# Run App
+# -------------------------
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = VTIViewer()
